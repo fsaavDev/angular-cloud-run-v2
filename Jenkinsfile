@@ -5,7 +5,7 @@ pipeline {
         // Variables migradas de tu env de GitHub Actions
         GCP_PROJECT_ID         = "sanbox-aldo-prod"
         GCP_REGION             = "us-central1"
-        ARTIFACT_REGISTRY_REPO = "container-repository-gemini" 
+        ARTIFACT_REGISTRY_REPO = "container-repository-gemini-at" 
         CLOUD_RUN_SERVICE_NAME = "gemini-angular-app"
         
         // El secret ENVIRONMENT_NAME lo manejamos de forma segura en Jenkins
