@@ -43,11 +43,6 @@ jobs:
           echo "service_name=gemini-angular-${{ secrets.ALUMNO_ID }}-${{ secrets.ENVIRONMENT_NAME }}" >> $GITHUB_OUTPUT
           echo "image_tag=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/app-${{ secrets.ALUMNO_ID }}:${{ github.sha }}" >> $GITHUB_OUTPUT
 
-      - name: Build and Push Image
-        run: |
-          docker build -t ${{ steps.vars.outputs.image_tag }} .
-          docker push ${{ steps.vars.outputs.image_tag }}
-
       - name: Check if Service Exists
         id: check_service
         run: |
@@ -58,6 +53,11 @@ jobs:
             echo "is_first_deploy=true" >> $GITHUB_OUTPUT
             echo "Primera vez que se despliega el servicio. Se enviará el 100% del tráfico."
           fi
+
+      - name: Build and Push Image
+        run: |
+          docker build -t ${{ steps.vars.outputs.image_tag }} .
+          docker push ${{ steps.vars.outputs.image_tag }}
 
       - name: Deploy Canary (10% traffic) or Full Deploy (100%)
         id: deploy_canary
@@ -72,7 +72,7 @@ jobs:
               --set-env-vars="ENVIRONMENT_NAME=${{ secrets.ENVIRONMENT_NAME }}"
           else
             # Siguientes veces: Desplegar nueva revisión sin asignarle tráfico inmediato
-            gcloud run deploy ${{ steps.vars.outputs.service_name }} \
+            gcloud run deploy ${{ secrets.vars.outputs.service_name }} \
               --image ${{ steps.vars.outputs.image_tag }} \
               --region ${{ env.GCP_REGION }} \
               --platform managed \
@@ -84,14 +84,13 @@ jobs:
             CANARY_REV=$(gcloud run services describe ${{ steps.vars.outputs.service_name }} --region ${{ env.GCP_REGION }} --format="value(status.latestReadyRevisionName)")
             echo "canary_revision=$CANARY_REV" >> $GITHUB_OUTPUT
             
-            # Asignar el 10% a la nueva versión y mantener el 90% en las anteriores
+            # SOLUCIÓN AQUÍ: Forzamos la matemática perfecta (90% a la actual estable y 10% a la nueva Canary)
             gcloud run services update-traffic ${{ steps.vars.outputs.service_name }} \
               --region ${{ env.GCP_REGION }} \
-              --to-revisions=$CANARY_REV=10
+              --to-revisions=LATEST=90,$CANARY_REV=10
           fi
 
-  # 2. JOB DE APROBACIÓN MANUAL (Para pasar al 100% o hacer Rollback)
-  # NOTA: Este job requiere que configures un entorno llamado "production_approval" en GitHub con "Required reviewers"
+  # 2. JOB DE APROBACIÓN MANUAL
   promote_or_rollback:
     needs: build_and_canary
     if: needs.build_and_canary.outputs.is_first_deploy == 'false'
@@ -129,10 +128,7 @@ jobs:
 
       - name: Rollback Traffic (Remove Canary)
         run: |
-          echo "El despliegue fue rechazado o falló. Revirtiendo el 100% del tráfico a la versión estable anterior..."
-          # Al asignar el 100% a 'LATEST', Cloud Run automáticamente ignora la versión Canary que no tenía tráfico por defecto
+          echo "El despliegue fue rechazado o falló. Revirtiendo el 100% del tráfico..."
           gcloud run services update-traffic ${{ needs.build_and_canary.outputs.service_name }} \
             --region ${{ env.GCP_REGION }} \
             --to-latest-revision
-
-            
